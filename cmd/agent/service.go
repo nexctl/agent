@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/kardianos/service"
+	"github.com/nexctl/agent/internal/config"
+	"github.com/nexctl/agent/internal/store"
 )
 
 // noopProgram 仅用于 install/uninstall 等控制命令注册服务；实际运行由 systemd/launchd 等直接执行
@@ -32,10 +34,13 @@ func printServiceUsage() {
 
 示例:
   %s service install -config /etc/nexctl/agent.yaml
+  %s service install -config /etc/nexctl/agent.yaml -keep-credential
   %s service status -config /etc/nexctl/agent.yaml
 
-说明: 不同配置文件会注册为不同服务名（与 nezhahq agent 类似，避免多实例冲突）。
-`, os.Args[0], os.Args[0], os.Args[0])
+说明:
+  - 不同配置文件会注册为不同服务名（与 nezhahq agent 类似，避免多实例冲突）。
+  - install 默认会先删除 credential.json（覆盖重装）；若需保留已有凭证，请加 -keep-credential。
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func serviceNameForConfig(absConfig string) string {
@@ -81,6 +86,7 @@ func runServiceCLI(args []string) int {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	configPath := fs.String("config", "configs/agent.example.yaml", "配置文件路径")
+	keepCred := fs.Bool("keep-credential", false, "仅 install：保留已有 credential.json（默认会删除以实现覆盖重装）")
 	if err := fs.Parse(args[1:]); err != nil {
 		log.Printf("参数错误: %v", err)
 		printServiceUsage()
@@ -111,6 +117,19 @@ func runServiceCLI(args []string) int {
 		printServiceUsage()
 		return 0
 	case "install":
+		if !*keepCred {
+			agentCfg, err := config.LoadAgent(absConfig)
+			if err != nil {
+				log.Printf("加载配置: %v", err)
+				return 1
+			}
+			credPath := store.CredentialPath(agentCfg.CredentialDir)
+			if err := store.RemoveCredentialFile(agentCfg.CredentialDir); err != nil {
+				log.Printf("删除凭证: %v", err)
+				return 1
+			}
+			fmt.Println("已删除旧凭证（重装覆盖）:", credPath)
+		}
 		fmt.Println("init system:", service.Platform())
 		if err := svc.Install(); err != nil {
 			log.Printf("install: %v", err)

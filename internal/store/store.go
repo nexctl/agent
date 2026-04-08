@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Credential stores long-lived agent registration credentials.
@@ -71,10 +72,28 @@ type FileCredentialStore struct {
 	path string
 }
 
+// CredentialPath 返回 credential.json 的完整路径。
+func CredentialPath(credentialDir string) string {
+	return filepath.Join(credentialDir, "credential.json")
+}
+
+// RemoveCredentialFile 删除已保存的凭证文件（若不存在则忽略）。用于重装后强制重新向服务端注册。
+func RemoveCredentialFile(credentialDir string) error {
+	if strings.TrimSpace(credentialDir) == "" {
+		return fmt.Errorf("credential_dir is empty")
+	}
+	path := CredentialPath(credentialDir)
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // NewFileCredentialStore creates a file-backed credential store.
 func NewFileCredentialStore(credentialDir string) *FileCredentialStore {
 	return &FileCredentialStore{
-		path: filepath.Join(credentialDir, "credential.json"),
+		path: CredentialPath(credentialDir),
 	}
 }
 

@@ -3,6 +3,8 @@ agent:
   register_path: "/api/v1/agents/register"
   # WebSocket 路径；与服务端 ws_url / 路由不一致时修改（握手失败请看日志里的 HTTP status 与 response_snippet）
   websocket_path: "/api/v1/agents/ws"
+  # 为 true 时始终用 server_url + websocket_path，忽略注册接口返回的 ws_url（服务端填错时常用）
+  force_websocket_from_config: false
   data_dir: "./data"
   config_dir: "./data/config"
   # 二选一：控制台「添加节点」生成的 enrollment_token（推荐），或传统 install_token

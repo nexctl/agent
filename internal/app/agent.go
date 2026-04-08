@@ -109,8 +109,10 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	a.credential = credential
 
+	wsDialURL := resolveWebSocketDialURL(a.logger, a.cfg, credential.WSURL)
+
 	go func() {
-		if err := a.ws.Run(ctx, credential.WSURL, credential.AgentID, credential.AgentSecret); err != nil && ctx.Err() == nil {
+		if err := a.ws.Run(ctx, wsDialURL, credential.AgentID, credential.AgentSecret); err != nil && ctx.Err() == nil {
 			a.logger.Error("ws client exited", zap.Error(err))
 		}
 	}()

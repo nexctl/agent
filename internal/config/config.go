@@ -14,6 +14,8 @@ type AgentConfig struct {
 	ServerURL                string `yaml:"server_url"`
 	RegisterPath             string `yaml:"register_path"`
 	WebSocketPath            string `yaml:"websocket_path"`
+	// ForceWebSocketFromConfig 为 true 时忽略注册接口返回的 ws_url，始终用 server_url + websocket_path 连接。
+	ForceWebSocketFromConfig bool `yaml:"force_websocket_from_config"`
 	NodeName                 string `yaml:"node_name"`
 	InstallToken             string `yaml:"install_token"`
 	EnrollmentToken          string `yaml:"enrollment_token"`
@@ -79,6 +81,9 @@ func applyAgentEnv(cfg *AgentConfig) {
 	overrideString(&cfg.AgentVersion, "OPSPILOT_AGENT_VERSION")
 	if v := os.Getenv("OPSPILOT_AGENT_DISABLE_AUTO_UPDATE"); v != "" {
 		cfg.DisableAutoUpdate = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := os.Getenv("OPSPILOT_AGENT_FORCE_WEBSOCKET_FROM_CONFIG"); v != "" {
+		cfg.ForceWebSocketFromConfig = strings.EqualFold(v, "true") || v == "1"
 	}
 	overrideInt(&cfg.SelfUpdatePeriodMinutes, "OPSPILOT_AGENT_SELF_UPDATE_PERIOD_MINUTES")
 	overrideString(&cfg.GithubRepo, "OPSPILOT_AGENT_GITHUB_REPO")

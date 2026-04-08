@@ -10,7 +10,7 @@
   - `node_id`
   - `agent_id`
   - `agent_secret`
-  - `ws_url`
+  - `ws_url`（若服务端误填为 `localhost` 等回环地址，而 `server_url` 为局域网 IP，agent 会自动改用 `server_url` + `websocket_path`；也可设 `force_websocket_from_config: true` 强制忽略注册返回的 `ws_url`）
 
 ### WebSocket Envelope
 
@@ -58,7 +58,8 @@ nexctl-agent service <install|uninstall|start|stop|restart|status> [-config <配
 ## Local Data Layout
 
 - `data/config/node_key`: 稳定本地节点标识
-- `data/credentials/credential.json`: 持久化服务端凭证
+- `data/credentials/credential.json`: 持久化服务端凭证（路径由配置 `credential_dir` 决定）
+- **重装覆盖凭证**：`service install` **默认会删除** `credential.json`；若仅重装服务且要保留凭证，请加 `-keep-credential`。也可单独执行 `nexctl-agent reset-credential -config <配置>`。
 - `data/logs/agent.log`: 日志
 
 ## Development Defaults
