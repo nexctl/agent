@@ -1,14 +1,11 @@
 # NexCtl Agent
 
-NexCtl Agent consists of two Go programs:
-
-- `agentd`: registration, websocket connection, heartbeat, and runtime-state reporting
-- `supervisor`: process supervision and future upgrade orchestration
+单一可执行文件（对齐 [nezhahq/agent](https://github.com/nezhahq/agent) 的 `cmd/agent` 形态）：负责注册、WebSocket、心跳与运行时状态上报。
 
 ## Unified Server Contract
 
 - Register: `POST /api/v1/agents/register`
-- Agent websocket: `GET /api/v1/agents/ws`（`agentd` 通过请求头 `X-NexCtl-Agent-Id` / `X-NexCtl-Agent-Secret` 携带凭证）
+- Agent websocket: `GET /api/v1/agents/ws`（通过请求头 `X-NexCtl-Agent-Id` / `X-NexCtl-Agent-Secret` 携带凭证）
 - Persisted credential fields:
   - `node_id`
   - `agent_id`
@@ -26,34 +23,29 @@ NexCtl Agent consists of two Go programs:
 }
 ```
 
-## Start `agentd`
+## 运行
 
-1. Edit `configs/agent.example.yaml`.
-2. Run:
-
-```powershell
-go run ./cmd/agentd -config configs/agent.example.yaml
-```
-
-## Start `supervisor`
-
-1. Edit `configs/supervisor.example.yaml`.
-2. Ensure `agentd_bin` points to the built `agentd` binary.
-3. Run:
+1. 编辑 `configs/agent.example.yaml`。
+2. 执行：
 
 ```powershell
-go run ./cmd/supervisor -config configs/supervisor.example.yaml
+go run ./cmd/agent -config configs/agent.example.yaml
 ```
+
+构建产物默认文件名为 `nexctl-agent`（见 `.goreleaser.yml`）。发布构建会将版本写入 `internal/app.Version`（`-ldflags`），可用 `nexctl-agent -v` 查看。
+
+### 自更新（参考 [nezhahq/agent](https://github.com/nezhahq/agent)）
+
+- 从 GitHub Releases 拉取与当前平台匹配的 zip（资源名需以 `_<goos>_<goarch>.zip` 结尾，与现有 CI 产物 `nexctl_linux_amd64.zip` 等形式一致）。
+- 配置项：`disable_auto_update`、`self_update_period_minutes`（为 0 时随机约 24～48 小时检查一次，与 nezhahq 默认区间一致）、`github_repo`（默认 `nexctl/agent`）。
+- 使用 `GITHUB_TOKEN` 可提升 GitHub API 限额（可选）。
+- 若已成功替换二进制，进程会以退出码 1 结束，便于 systemd 等拉起新版本。
 
 ## Local Data Layout
 
-- `data/config/node_key`: stable local node identity key
-- `data/credentials/credential.json`: persisted long-lived server credential
-- `data/logs/agentd.log`: agentd log output
-- `data/logs/supervisor.log`: supervisor log output
-- `data/releases`: reserved for downloaded releases
-- `data/rollback`: reserved for rollback artifacts
-- `data/current`: reserved for current active version pointer
+- `data/config/node_key`: 稳定本地节点标识
+- `data/credentials/credential.json`: 持久化服务端凭证
+- `data/logs/agent.log`: 日志
 
 ## Development Defaults
 

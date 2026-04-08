@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AgentConfig stores agentd runtime settings.
+// AgentConfig stores agent runtime settings.
 type AgentConfig struct {
 	ServerURL                string `yaml:"server_url"`
 	RegisterPath             string `yaml:"register_path"`
@@ -25,30 +25,16 @@ type AgentConfig struct {
 	ReconnectIntervalSeconds int    `yaml:"reconnect_interval_seconds"`
 	RequestTimeoutSeconds    int    `yaml:"request_timeout_seconds"`
 	AgentVersion             string `yaml:"agent_version"`
-}
-
-// SupervisorConfig stores supervisor runtime settings.
-type SupervisorConfig struct {
-	DataDir             string `yaml:"data_dir"`
-	LogDir              string `yaml:"log_dir"`
-	ReleaseDir          string `yaml:"release_dir"`
-	RollbackDir         string `yaml:"rollback_dir"`
-	CurrentDir          string `yaml:"current_dir"`
-	AgentdBin           string `yaml:"agentd_bin"`
-	AgentdConfig        string `yaml:"agentd_config"`
-	RestartDelaySeconds int    `yaml:"restart_delay_seconds"`
-	MaxRestartBurst     int    `yaml:"max_restart_burst"`
+	DisableAutoUpdate        bool   `yaml:"disable_auto_update"`
+	SelfUpdatePeriodMinutes  int    `yaml:"self_update_period_minutes"`
+	GithubRepo               string `yaml:"github_repo"`
 }
 
 type agentFile struct {
 	Agent AgentConfig `yaml:"agent"`
 }
 
-type supervisorFile struct {
-	Supervisor SupervisorConfig `yaml:"supervisor"`
-}
-
-// LoadAgent loads agentd config from yaml and env.
+// LoadAgent loads agent config from yaml and env.
 func LoadAgent(path string) (AgentConfig, error) {
 	var payload agentFile
 	if err := load(path, &payload); err != nil {
@@ -56,17 +42,10 @@ func LoadAgent(path string) (AgentConfig, error) {
 	}
 	applyAgentEnv(&payload.Agent)
 	payload.Agent.RegisterPath = normalizePath(payload.Agent.RegisterPath, "/api/v1/agents/register")
-	return payload.Agent, nil
-}
-
-// LoadSupervisor loads supervisor config from yaml and env.
-func LoadSupervisor(path string) (SupervisorConfig, error) {
-	var payload supervisorFile
-	if err := load(path, &payload); err != nil {
-		return SupervisorConfig{}, err
+	if strings.TrimSpace(payload.Agent.GithubRepo) == "" {
+		payload.Agent.GithubRepo = "nexctl/agent"
 	}
-	applySupervisorEnv(&payload.Supervisor)
-	return payload.Supervisor, nil
+	return payload.Agent, nil
 }
 
 func load(path string, target any) error {
@@ -95,18 +74,11 @@ func applyAgentEnv(cfg *AgentConfig) {
 	overrideInt(&cfg.ReconnectIntervalSeconds, "OPSPILOT_AGENT_RECONNECT_INTERVAL_SECONDS")
 	overrideInt(&cfg.RequestTimeoutSeconds, "OPSPILOT_AGENT_REQUEST_TIMEOUT_SECONDS")
 	overrideString(&cfg.AgentVersion, "OPSPILOT_AGENT_VERSION")
-}
-
-func applySupervisorEnv(cfg *SupervisorConfig) {
-	overrideString(&cfg.DataDir, "OPSPILOT_SUPERVISOR_DATA_DIR")
-	overrideString(&cfg.LogDir, "OPSPILOT_SUPERVISOR_LOG_DIR")
-	overrideString(&cfg.ReleaseDir, "OPSPILOT_SUPERVISOR_RELEASE_DIR")
-	overrideString(&cfg.RollbackDir, "OPSPILOT_SUPERVISOR_ROLLBACK_DIR")
-	overrideString(&cfg.CurrentDir, "OPSPILOT_SUPERVISOR_CURRENT_DIR")
-	overrideString(&cfg.AgentdBin, "OPSPILOT_SUPERVISOR_AGENTD_BIN")
-	overrideString(&cfg.AgentdConfig, "OPSPILOT_SUPERVISOR_AGENTD_CONFIG")
-	overrideInt(&cfg.RestartDelaySeconds, "OPSPILOT_SUPERVISOR_RESTART_DELAY_SECONDS")
-	overrideInt(&cfg.MaxRestartBurst, "OPSPILOT_SUPERVISOR_MAX_RESTART_BURST")
+	if v := os.Getenv("OPSPILOT_AGENT_DISABLE_AUTO_UPDATE"); v != "" {
+		cfg.DisableAutoUpdate = strings.EqualFold(v, "true") || v == "1"
+	}
+	overrideInt(&cfg.SelfUpdatePeriodMinutes, "OPSPILOT_AGENT_SELF_UPDATE_PERIOD_MINUTES")
+	overrideString(&cfg.GithubRepo, "OPSPILOT_AGENT_GITHUB_REPO")
 }
 
 func overrideString(target *string, envKey string) {

@@ -1,0 +1,40 @@
+# 与 GitHub Actions 中 goreleaser build 配合使用
+version: 2
+
+project_name: nexctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: agent
+    main: ./cmd/agent
+    binary: nexctl-agent
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/nexctl/agent/internal/app.Version={{.Version}}
+    goos:
+      - linux
+      - windows
+      - freebsd
+      - darwin
+    goarch:
+      - arm
+      - arm64
+      - "386"
+      - amd64
+      - mips
+      - mipsle
+      - s390x
+      - riscv64
+      - loong64
+    gomips:
+      - softfloat
+    ignore:
+      - goos: windows
+        goarch: arm
+
+snapshot:
+  version_template: nexctl

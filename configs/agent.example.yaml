@@ -14,3 +14,8 @@ agent:
   reconnect_interval_seconds: 5
   request_timeout_seconds: 10
   agent_version: "0.1.0"
+  # 自更新（参考 nezhahq agent）：Release 资源名需匹配 *_<goos>_<goarch>.zip，如 nexctl_linux_amd64.zip
+  disable_auto_update: false
+  # 为 0 时随机 1440～2880 分钟检查一次（与 nezhahq 默认一致）
+  self_update_period_minutes: 0
+  github_repo: "nexctl/agent"

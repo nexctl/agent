@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
+	"os"
 	"time"
 
 	"github.com/nexctl/agent/internal/collector"
@@ -15,14 +18,23 @@ import (
 	"go.uber.org/zap"
 )
 
-// RuntimeCollector defines the collector capability required by agentd.
+// ErrRestartAfterUpdate 表示已成功替换二进制，进程应退出以便由外部拉起新版本（与 nezhahq agent 行为一致）。
+var ErrRestartAfterUpdate = errors.New("restart after self-update")
+
+// 与 nezhahq agent 默认随机检查间隔（分钟）一致：minUpdateInterval ~ maxUpdateInterval
+const (
+	minSelfUpdateIntervalMin = 1440
+	maxSelfUpdateIntervalMin = 2880
+)
+
+// RuntimeCollector defines the collector capability required by the agent.
 type RuntimeCollector interface {
 	CollectIdentity(ctx context.Context) (*collector.Identity, error)
 	CollectRuntimeState(ctx context.Context) (*collector.RuntimeState, error)
 }
 
-// Agentd coordinates registration, websocket connection, and periodic reporting.
-type Agentd struct {
+// Agent coordinates registration, websocket connection, periodic reporting, and optional self-update.
+type Agent struct {
 	cfg        config.AgentConfig
 	logger     *zap.Logger
 	store      store.CredentialStore
@@ -32,8 +44,8 @@ type Agentd struct {
 	credential *store.Credential
 }
 
-// NewAgentd creates an agentd application.
-func NewAgentd(cfg config.AgentConfig) (*Agentd, error) {
+// NewAgent creates the agent runtime.
+func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 	layout := store.Layout{
 		DataDir:       cfg.DataDir,
 		ConfigDir:     cfg.ConfigDir,
@@ -44,7 +56,7 @@ func NewAgentd(cfg config.AgentConfig) (*Agentd, error) {
 		return nil, err
 	}
 
-	logger, err := NewLogger(cfg.LogDir, "agentd.log")
+	logger, err := NewLogger(cfg.LogDir, "agent.log")
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +66,7 @@ func NewAgentd(cfg config.AgentConfig) (*Agentd, error) {
 		return nil, err
 	}
 
-	return &Agentd{
+	return &Agent{
 		cfg:       cfg,
 		logger:    logger,
 		store:     store.NewFileCredentialStore(cfg.CredentialDir),
@@ -64,8 +76,19 @@ func NewAgentd(cfg config.AgentConfig) (*Agentd, error) {
 	}, nil
 }
 
-// Run starts the agentd lifecycle.
-func (a *Agentd) Run(ctx context.Context) error {
+// Run starts the agent lifecycle.
+func (a *Agent) Run(ctx context.Context) error {
+	if !a.cfg.DisableAutoUpdate {
+		if _, err := ParseBuildVersion(); err == nil {
+			if doSelfUpdate(ctx, a.logger, a.cfg, true) {
+				return ErrRestartAfterUpdate
+			}
+			go a.selfUpdateLoop(ctx)
+		} else {
+			a.logger.Debug("self-update disabled: version is not semver", zap.String("version", Version))
+		}
+	}
+
 	credential, err := a.store.Load()
 	if err != nil {
 		return err
@@ -99,7 +122,28 @@ func (a *Agentd) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (a *Agentd) heartbeatLoop(ctx context.Context) {
+func (a *Agent) selfUpdateLoop(ctx context.Context) {
+	var interval time.Duration
+	if a.cfg.SelfUpdatePeriodMinutes > 0 {
+		interval = time.Duration(a.cfg.SelfUpdatePeriodMinutes) * time.Minute
+	} else {
+		interval = time.Duration(rand.Intn(maxSelfUpdateIntervalMin-minSelfUpdateIntervalMin)+minSelfUpdateIntervalMin) * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if doSelfUpdate(ctx, a.logger, a.cfg, true) {
+				os.Exit(1)
+			}
+		}
+	}
+}
+
+func (a *Agent) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(heartbeatInterval(a.cfg.HeartbeatIntervalSeconds))
 	defer ticker.Stop()
 
@@ -119,7 +163,7 @@ func (a *Agentd) heartbeatLoop(ctx context.Context) {
 	}
 }
 
-func (a *Agentd) runtimeStateLoop(ctx context.Context) {
+func (a *Agent) runtimeStateLoop(ctx context.Context) {
 	ticker := time.NewTicker(runtimeInterval(a.cfg.RuntimeIntervalSeconds))
 	defer ticker.Stop()
 

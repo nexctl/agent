@@ -1,0 +1,118 @@
+# 参考 nezhahq/agent: https://github.com/nezhahq/agent/blob/main/.github/workflows/agent.yml
+name: Build + Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        goos: [linux, windows, darwin, freebsd]
+        goarch: [amd64, arm64, "386"]
+        include:
+          - goos: linux
+            goarch: "386"
+          - goos: linux
+            goarch: s390x
+          - goos: linux
+            goarch: riscv64
+          - goos: linux
+            goarch: arm
+          - goos: linux
+            goarch: mips
+            gomips: softfloat
+          - goos: linux
+            goarch: mipsle
+            gomips: softfloat
+          - goos: linux
+            goarch: loong64
+          - goos: freebsd
+            goarch: arm
+        exclude:
+          - goos: darwin
+            goarch: "386"
+
+    name: Build artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "^1.25.0"
+
+      - name: Build Test
+        if: github.event_name != 'push' || !contains(github.ref, 'refs/tags/')
+        uses: goreleaser/goreleaser-action@v7
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOMIPS: ${{ matrix.gomips }}
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --single-target --clean --skip=validate --snapshot
+
+      - name: Build
+        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+        uses: goreleaser/goreleaser-action@v7
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOMIPS: ${{ matrix.gomips }}
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --single-target --clean --skip=validate
+
+      - name: Archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: zip -jr "dist/nexctl_${GOOS}_${GOARCH}.zip" dist/*/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: nexctl_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            ./dist/nexctl_${{ matrix.goos }}_${{ matrix.goarch }}.zip
+
+  release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    needs: build
+    name: Release
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ./assets
+
+      - name: Checksum
+        run: sha256sum ./assets/*/*.zip | awk -F" |/" '{print $1, $NF}' > checksums.txt
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            checksums.txt
+            assets/*/*.zip
+          generate_release_notes: true
