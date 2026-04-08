@@ -64,12 +64,16 @@ type TerminalHandler interface {
 	HandleServerMessage(msg Message) error
 }
 
+// UpgradeCheckHandler 控制面下发 upgrade_command 时触发一次 GitHub 自更新检查。
+type UpgradeCheckHandler func()
+
 // Client manages the websocket connection and reconnection loop.
 type Client struct {
-	cfg      config.AgentConfig
-	logger   *zap.Logger
-	sendCh   chan Message
-	terminal TerminalHandler
+	cfg           config.AgentConfig
+	logger        *zap.Logger
+	sendCh        chan Message
+	terminal      TerminalHandler
+	upgradeCheck  UpgradeCheckHandler
 }
 
 // New creates a websocket client.
@@ -84,6 +88,11 @@ func New(cfg config.AgentConfig, logger *zap.Logger) *Client {
 // SetTerminalHandler 注册终端消息处理器（须在 Run 前调用）。
 func (c *Client) SetTerminalHandler(h TerminalHandler) {
 	c.terminal = h
+}
+
+// SetUpgradeCheckHandler 注册升级检查回调（须在 Run 前调用）。
+func (c *Client) SetUpgradeCheckHandler(h UpgradeCheckHandler) {
+	c.upgradeCheck = h
 }
 
 // Send enqueues a message for websocket delivery.
@@ -293,6 +302,10 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, errCh chan<
 					if err := c.terminal.HandleServerMessage(msg); err != nil {
 						c.logger.Debug("terminal handler", zap.Error(err))
 					}
+				}
+			case MessageTypeUpgradeCommand:
+				if c.upgradeCheck != nil {
+					go c.upgradeCheck()
 				}
 			default:
 				c.logger.Debug("websocket message", zap.String("type", msg.Type), zap.String("request_id", msg.RequestID))

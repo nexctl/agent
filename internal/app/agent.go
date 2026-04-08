@@ -72,14 +72,32 @@ func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 	termMgr := terminal.NewManager(ws, logger, strings.TrimSpace(cfg.TerminalShell))
 	ws.SetTerminalHandler(termMgr)
 
-	return &Agent{
+	agent := &Agent{
 		cfg:       cfg,
 		logger:    logger,
 		store:     store.NewFileCredentialStore(cfg.CredentialDir),
 		collector: collector.New(nodeKey, cfg.NodeName, cfg.InstallToken, cfg.EnrollmentToken, cfg.AgentVersion),
 		register:  httpclient.New(cfg),
 		ws:        ws,
-	}, nil
+	}
+	ws.SetUpgradeCheckHandler(agent.runUpgradeFromControlPlane)
+
+	return agent, nil
+}
+
+// runUpgradeFromControlPlane 响应控制面 WebSocket 下发的 upgrade_command，执行一次与定时任务相同的 GitHub 自更新检查。
+func (a *Agent) runUpgradeFromControlPlane() {
+	ctx := context.Background()
+	a.logger.Info("收到控制面 upgrade_command，检查 GitHub Release 更新")
+	if _, err := ParseBuildVersion(); err != nil {
+		a.logger.Warn("upgrade_command 跳过：当前二进制版本非 semver", zap.String("version", Version))
+		return
+	}
+	if doSelfUpdate(ctx, a.logger, a.cfg, true) {
+		a.logger.Info("upgrade_command：已更新，进程退出以便服务管理器拉起新版本")
+		os.Exit(1)
+	}
+	a.logger.Info("upgrade_command：无新版本或更新未应用")
 }
 
 // Run starts the agent lifecycle.
