@@ -7,6 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.4.1
 	github.com/gorilla/websocket v1.5.3
+	github.com/kardianos/service v1.2.2
 	github.com/shirou/gopsutil/v4 v4.25.3
 	go.uber.org/zap v1.27.0
 	gopkg.in/yaml.v3 v3.0.1

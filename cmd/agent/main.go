@@ -15,6 +15,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "service" {
+		os.Exit(runServiceCLI(os.Args[2:]))
+	}
+
 	configPath := flag.String("config", "configs/agent.example.yaml", "agent config path")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	shortV := flag.Bool("v", false, "print version and exit")

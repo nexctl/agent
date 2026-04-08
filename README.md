@@ -34,6 +34,20 @@ go run ./cmd/agent -config configs/agent.example.yaml
 
 构建产物默认文件名为 `nexctl-agent`（见 `.goreleaser.yml`）。发布构建会将版本写入 `internal/app.Version`（`-ldflags`），可用 `nexctl-agent -v` 查看。
 
+### 安装为系统服务（开机自启，参考 nezhahq agent）
+
+使用 [kardianos/service](https://github.com/kardianos/service)，支持 **Windows 服务、Linux（systemd 等）、macOS（launchd）、OpenRC 等**（与哪吒 agent 所用方案同类）。
+
+```text
+nexctl-agent service <install|uninstall|start|stop|restart|status> [-config <配置文件路径>]
+```
+
+- **install / uninstall** 通常需要 **管理员（Windows）或 root（Linux/macOS）**。
+- 使用**非默认**配置文件路径时，会注册为独立服务名 `nexctl-agent-<配置路径 MD5 前缀>`，避免多实例冲突。
+- 安装后 Linux 常见操作为：`sudo systemctl daemon-reload && sudo systemctl enable --now nexctl-agent`（具体单元名以 `install` 输出为准）。
+
+查看子命令说明：`nexctl-agent service help`。
+
 ### 自更新（参考 [nezhahq/agent](https://github.com/nezhahq/agent)）
 
 - 从 GitHub Releases 拉取与当前平台匹配的 zip（资源名需以 `_<goos>_<goarch>.zip` 结尾，与现有 CI 产物 `nexctl_linux_amd64.zip` 等形式一致）。
