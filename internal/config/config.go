@@ -31,6 +31,8 @@ type AgentConfig struct {
 	DisableAutoUpdate        bool   `yaml:"disable_auto_update"`
 	SelfUpdatePeriodMinutes  int    `yaml:"self_update_period_minutes"`
 	GithubRepo               string `yaml:"github_repo"`
+	// TerminalShell 为空时使用平台默认（如 /bin/sh、cmd.exe）；仅影响远程 Web 终端。
+	TerminalShell string `yaml:"terminal_shell"`
 }
 
 type agentFile struct {
@@ -87,6 +89,7 @@ func applyAgentEnv(cfg *AgentConfig) {
 	}
 	overrideInt(&cfg.SelfUpdatePeriodMinutes, "OPSPILOT_AGENT_SELF_UPDATE_PERIOD_MINUTES")
 	overrideString(&cfg.GithubRepo, "OPSPILOT_AGENT_GITHUB_REPO")
+	overrideString(&cfg.TerminalShell, "OPSPILOT_AGENT_TERMINAL_SHELL")
 }
 
 func overrideString(target *string, envKey string) {

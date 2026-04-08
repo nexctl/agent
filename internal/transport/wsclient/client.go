@@ -30,6 +30,13 @@ const (
 	MessageTypeFileDispatch = "file_dispatch"
 	// MessageTypeUpgradeCommand is reserved for future upgrade commands.
 	MessageTypeUpgradeCommand = "upgrade_command"
+
+	MessageTypeTerminalOpen   = "terminal_open"
+	MessageTypeTerminalInput  = "terminal_input"
+	MessageTypeTerminalResize = "terminal_resize"
+	MessageTypeTerminalClose  = "terminal_close"
+	MessageTypeTerminalOutput = "terminal_output"
+	MessageTypeTerminalExit   = "terminal_exit"
 )
 
 // Message is the base websocket message envelope.
@@ -52,11 +59,17 @@ type ErrorPayload struct {
 	Message     string `json:"message"`
 }
 
+// TerminalHandler 处理控制面下发的终端类 WebSocket 消息（与浏览器经控制面转发的会话对应）。
+type TerminalHandler interface {
+	HandleServerMessage(msg Message) error
+}
+
 // Client manages the websocket connection and reconnection loop.
 type Client struct {
-	cfg    config.AgentConfig
-	logger *zap.Logger
-	sendCh chan Message
+	cfg      config.AgentConfig
+	logger   *zap.Logger
+	sendCh   chan Message
+	terminal TerminalHandler
 }
 
 // New creates a websocket client.
@@ -66,6 +79,11 @@ func New(cfg config.AgentConfig, logger *zap.Logger) *Client {
 		logger: logger,
 		sendCh: make(chan Message, 128),
 	}
+}
+
+// SetTerminalHandler 注册终端消息处理器（须在 Run 前调用）。
+func (c *Client) SetTerminalHandler(h TerminalHandler) {
+	c.terminal = h
 }
 
 // Send enqueues a message for websocket delivery.
@@ -253,13 +271,32 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, errCh chan<
 		case <-ctx.Done():
 			return
 		default:
-			var ack map[string]any
-			if err := conn.ReadJSON(&ack); err != nil {
+			var msg Message
+			if err := conn.ReadJSON(&msg); err != nil {
 				errCh <- err
 				return
 			}
 			_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
-			c.logger.Debug("websocket message", zap.Any("message", ack))
+			switch msg.Type {
+			case MessageTypeAck:
+				c.logger.Debug("websocket ack", zap.String("request_id", msg.RequestID))
+			case MessageTypeError:
+				var ep ErrorPayload
+				_ = json.Unmarshal(msg.Payload, &ep)
+				c.logger.Warn("websocket error from server",
+					zap.String("request_id", msg.RequestID),
+					zap.String("for_type", ep.MessageType),
+					zap.String("message", ep.Message),
+				)
+			case MessageTypeTerminalOpen, MessageTypeTerminalInput, MessageTypeTerminalResize, MessageTypeTerminalClose:
+				if c.terminal != nil {
+					if err := c.terminal.HandleServerMessage(msg); err != nil {
+						c.logger.Debug("terminal handler", zap.Error(err))
+					}
+				}
+			default:
+				c.logger.Debug("websocket message", zap.String("type", msg.Type), zap.String("request_id", msg.RequestID))
+			}
 		}
 	}
 }

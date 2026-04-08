@@ -54,7 +54,7 @@ func (a *Adapter) DisableService(_ context.Context, _ string) error {
 
 // OpenTerminal opens a PTY-backed terminal session.
 func (a *Adapter) OpenTerminal(ctx context.Context, shell string) (terminal.Session, error) {
-	return terminal.OpenPTY(ctx, shell)
+	return terminal.OpenPTY(ctx, shell, 0, 0)
 }
 
 // WriteFile writes a file to disk.

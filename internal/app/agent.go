@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nexctl/agent/internal/collector"
 	"github.com/nexctl/agent/internal/config"
 	"github.com/nexctl/agent/internal/security"
 	"github.com/nexctl/agent/internal/store"
+	"github.com/nexctl/agent/internal/terminal"
 	"github.com/nexctl/agent/internal/transport/httpclient"
 	"github.com/nexctl/agent/internal/transport/wsclient"
 	"go.uber.org/zap"
@@ -66,13 +68,17 @@ func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 		return nil, err
 	}
 
+	ws := wsclient.New(cfg, logger)
+	termMgr := terminal.NewManager(ws, logger, strings.TrimSpace(cfg.TerminalShell))
+	ws.SetTerminalHandler(termMgr)
+
 	return &Agent{
 		cfg:       cfg,
 		logger:    logger,
 		store:     store.NewFileCredentialStore(cfg.CredentialDir),
 		collector: collector.New(nodeKey, cfg.NodeName, cfg.InstallToken, cfg.EnrollmentToken, cfg.AgentVersion),
 		register:  httpclient.New(cfg),
-		ws:        wsclient.New(cfg, logger),
+		ws:        ws,
 	}, nil
 }
 
