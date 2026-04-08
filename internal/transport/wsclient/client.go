@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -84,7 +85,7 @@ func (c *Client) Run(ctx context.Context, rawURL, agentID, agentSecret string) e
 			return ctx.Err()
 		}
 
-		conn, err := c.dial(rawURL, agentID, agentSecret)
+		conn, err := c.dial(ctx, rawURL, agentID, agentSecret)
 		if err != nil {
 			c.logger.Warn("dial websocket failed", zap.Error(err))
 			if !sleepWithContext(ctx, reconnectDelay(c.cfg.ReconnectIntervalSeconds)) {
@@ -112,7 +113,7 @@ func (c *Client) Run(ctx context.Context, rawURL, agentID, agentSecret string) e
 	}
 }
 
-func (c *Client) dial(rawURL, agentID, agentSecret string) (*websocket.Conn, error) {
+func (c *Client) dial(ctx context.Context, rawURL, agentID, agentSecret string) (*websocket.Conn, error) {
 	wsURL, err := c.resolveWebSocketURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -126,22 +127,62 @@ func (c *Client) dial(rawURL, agentID, agentSecret string) (*websocket.Conn, err
 	header.Set("User-Agent", "NexCtl-Agent/"+strings.TrimSpace(c.cfg.AgentVersion))
 	header.Set("X-NexCtl-Agent-Id", agentID)
 	header.Set("X-NexCtl-Agent-Secret", agentSecret)
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), header)
+	if o := websocketOrigin(u); o != "" {
+		header.Set("Origin", o)
+	}
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 45 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
+	}
+
+	conn, resp, err := dialer.DialContext(ctx, u.String(), header)
 	if err != nil {
+		if resp != nil {
+			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			_ = resp.Body.Close()
+			c.logger.Warn("websocket handshake failed",
+				zap.String("url", u.Redacted()),
+				zap.Int("status", resp.StatusCode),
+				zap.String("response_snippet", strings.TrimSpace(string(snippet))),
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("dial websocket: %s (HTTP %d): %w", resp.Status, resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("dial websocket: %w", err)
+	}
+	if resp != nil {
+		_ = resp.Body.Close()
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	return conn, nil
 }
 
-// defaultWSPath 与 README 中的 Agent websocket 路径一致。
-const defaultWSPath = "/api/v1/agents/ws"
+// websocketOrigin 生成与 RFC 6454 一致的 Origin（http/https），部分服务端会校验 Origin，缺少时易返回非 101。
+func websocketOrigin(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	ou := *u
+	switch strings.ToLower(ou.Scheme) {
+	case "ws":
+		ou.Scheme = "http"
+	case "wss":
+		ou.Scheme = "https"
+	default:
+		return ""
+	}
+	ou.Path = ""
+	ou.RawQuery = ""
+	ou.Fragment = ""
+	return ou.String()
+}
 
 // resolveWebSocketURL 将服务端可能返回的 http(s) URL 转为 ws(s)，或在 ws_url 为空时根据 server_url 推导。
 func (c *Client) resolveWebSocketURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return deriveWSFromServerURL(c.cfg.ServerURL)
+		return c.deriveWSFromServerURL(c.cfg.ServerURL)
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -169,7 +210,7 @@ func (c *Client) resolveWebSocketURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-func deriveWSFromServerURL(serverURL string) (string, error) {
+func (c *Client) deriveWSFromServerURL(serverURL string) (string, error) {
 	serverURL = strings.TrimSpace(strings.TrimRight(serverURL, "/"))
 	if serverURL == "" {
 		return "", fmt.Errorf("server_url is empty, cannot derive websocket url")
@@ -187,7 +228,7 @@ func deriveWSFromServerURL(serverURL string) (string, error) {
 		return "", fmt.Errorf("server_url scheme must be http or https, got %q", u.Scheme)
 	}
 	if u.Path == "" || u.Path == "/" {
-		u.Path = defaultWSPath
+		u.Path = c.cfg.WebSocketPath
 	}
 	return u.String(), nil
 }

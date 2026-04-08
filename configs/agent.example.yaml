@@ -1,6 +1,8 @@
 agent:
   server_url: "http://localhost:8080"
   register_path: "/api/v1/agents/register"
+  # WebSocket 路径；与服务端 ws_url / 路由不一致时修改（握手失败请看日志里的 HTTP status 与 response_snippet）
+  websocket_path: "/api/v1/agents/ws"
   data_dir: "./data"
   config_dir: "./data/config"
   # 二选一：控制台「添加节点」生成的 enrollment_token（推荐），或传统 install_token

@@ -13,6 +13,7 @@ import (
 type AgentConfig struct {
 	ServerURL                string `yaml:"server_url"`
 	RegisterPath             string `yaml:"register_path"`
+	WebSocketPath            string `yaml:"websocket_path"`
 	NodeName                 string `yaml:"node_name"`
 	InstallToken             string `yaml:"install_token"`
 	EnrollmentToken          string `yaml:"enrollment_token"`
@@ -42,6 +43,7 @@ func LoadAgent(path string) (AgentConfig, error) {
 	}
 	applyAgentEnv(&payload.Agent)
 	payload.Agent.RegisterPath = normalizePath(payload.Agent.RegisterPath, "/api/v1/agents/register")
+	payload.Agent.WebSocketPath = normalizePath(payload.Agent.WebSocketPath, "/api/v1/agents/ws")
 	if strings.TrimSpace(payload.Agent.GithubRepo) == "" {
 		payload.Agent.GithubRepo = "nexctl/agent"
 	}
@@ -62,6 +64,7 @@ func load(path string, target any) error {
 func applyAgentEnv(cfg *AgentConfig) {
 	overrideString(&cfg.ServerURL, "OPSPILOT_AGENT_SERVER_URL")
 	overrideString(&cfg.RegisterPath, "OPSPILOT_AGENT_REGISTER_PATH")
+	overrideString(&cfg.WebSocketPath, "OPSPILOT_AGENT_WEBSOCKET_PATH")
 	overrideString(&cfg.NodeName, "OPSPILOT_AGENT_NODE_NAME")
 	overrideString(&cfg.InstallToken, "OPSPILOT_AGENT_INSTALL_TOKEN")
 	overrideString(&cfg.EnrollmentToken, "OPSPILOT_AGENT_ENROLLMENT_TOKEN")
