@@ -1,0 +1,16 @@
+agent:
+  server_url: "http://localhost:8080"
+  register_path: "/api/v1/agents/register"
+  data_dir: "./data"
+  config_dir: "./data/config"
+  # 二选一：控制台「添加节点」生成的 enrollment_token（推荐），或传统 install_token
+  install_token: ""
+  enrollment_token: ""
+  node_name: "example-node"
+  credential_dir: "./data/credentials"
+  log_dir: "./data/logs"
+  runtime_interval_seconds: 30
+  heartbeat_interval_seconds: 15
+  reconnect_interval_seconds: 5
+  request_timeout_seconds: 10
+  agent_version: "0.1.0"
