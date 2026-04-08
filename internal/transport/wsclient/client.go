@@ -113,7 +113,11 @@ func (c *Client) Run(ctx context.Context, rawURL, agentID, agentSecret string) e
 }
 
 func (c *Client) dial(rawURL, agentID, agentSecret string) (*websocket.Conn, error) {
-	u, err := url.Parse(rawURL)
+	wsURL, err := c.resolveWebSocketURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(wsURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse ws url: %w", err)
 	}
@@ -128,6 +132,64 @@ func (c *Client) dial(rawURL, agentID, agentSecret string) (*websocket.Conn, err
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	return conn, nil
+}
+
+// defaultWSPath 与 README 中的 Agent websocket 路径一致。
+const defaultWSPath = "/api/v1/agents/ws"
+
+// resolveWebSocketURL 将服务端可能返回的 http(s) URL 转为 ws(s)，或在 ws_url 为空时根据 server_url 推导。
+func (c *Client) resolveWebSocketURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return deriveWSFromServerURL(c.cfg.ServerURL)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse websocket url: %w", err)
+	}
+	if u.Scheme == "" && strings.HasPrefix(raw, "/") {
+		base, err := url.Parse(strings.TrimRight(c.cfg.ServerURL, "/"))
+		if err != nil {
+			return "", fmt.Errorf("parse server_url for relative ws_url: %w", err)
+		}
+		u = base.ResolveReference(u)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	case "ws", "wss":
+		// ok
+	case "":
+		return "", fmt.Errorf("websocket url missing scheme: %q", raw)
+	default:
+		return "", fmt.Errorf("unsupported websocket url scheme %q (expected ws, wss, http, or https)", u.Scheme)
+	}
+	return u.String(), nil
+}
+
+func deriveWSFromServerURL(serverURL string) (string, error) {
+	serverURL = strings.TrimSpace(strings.TrimRight(serverURL, "/"))
+	if serverURL == "" {
+		return "", fmt.Errorf("server_url is empty, cannot derive websocket url")
+	}
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		return "", fmt.Errorf("parse server_url: %w", err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	default:
+		return "", fmt.Errorf("server_url scheme must be http or https, got %q", u.Scheme)
+	}
+	if u.Path == "" || u.Path == "/" {
+		u.Path = defaultWSPath
+	}
+	return u.String(), nil
 }
 
 func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, errCh chan<- error) {
