@@ -170,9 +170,7 @@ func (c *Client) dial(ctx context.Context, rawURL, agentID, agentSecret string) 
 	header.Set("User-Agent", "NexCtl-Agent/"+strings.TrimSpace(c.cfg.AgentVersion))
 	header.Set("X-NexCtl-Agent-Id", agentID)
 	header.Set("X-NexCtl-Agent-Secret", agentSecret)
-	if o := websocketOrigin(u); o != "" {
-		header.Set("Origin", o)
-	}
+	// 不设 Origin：控制面 WebSocket 的 CheckOrigin 对「无 Origin」放行；若带 Origin 则须列入 websocket_allowed_origins，否则 403（与浏览器控制台终端不同）。
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 45 * time.Second,
@@ -199,26 +197,6 @@ func (c *Client) dial(ctx context.Context, rawURL, agentID, agentSecret string) 
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	return conn, nil
-}
-
-// websocketOrigin 生成与 RFC 6454 一致的 Origin（http/https），部分服务端会校验 Origin，缺少时易返回非 101。
-func websocketOrigin(u *url.URL) string {
-	if u == nil {
-		return ""
-	}
-	ou := *u
-	switch strings.ToLower(ou.Scheme) {
-	case "ws":
-		ou.Scheme = "http"
-	case "wss":
-		ou.Scheme = "https"
-	default:
-		return ""
-	}
-	ou.Path = ""
-	ou.RawQuery = ""
-	ou.Fragment = ""
-	return ou.String()
 }
 
 // resolveWebSocketURL 将服务端可能返回的 http(s) URL 转为 ws(s)，或在 ws_url 为空时根据 server_url 推导。

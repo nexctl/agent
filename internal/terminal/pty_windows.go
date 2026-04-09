@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,7 +28,18 @@ func openPTY(ctx context.Context, shell string, cols, rows int) (Session, error)
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, shell)
+	base := strings.ToLower(filepath.Base(shell))
+	var cmd *exec.Cmd
+	switch base {
+	case "cmd.exe":
+		// 无 /K 时 cmd 在管道模式下常表现为非交互，Web 终端无法逐键输入
+		cmd = exec.CommandContext(ctx, shell, "/K")
+	case "powershell.exe", "pwsh.exe":
+		// 管道下尽量保持会话；若仍异常需 ConPTY 或改用 cmd /K
+		cmd = exec.CommandContext(ctx, shell, "-NoLogo", "-NoExit")
+	default:
+		cmd = exec.CommandContext(ctx, shell)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
