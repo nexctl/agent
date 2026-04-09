@@ -2,7 +2,6 @@ package collector
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/nexctl/agent/pkg/osutil"
@@ -30,10 +29,8 @@ type RuntimeState struct {
 	Timestamp     time.Time `json:"timestamp"`
 }
 
-// Identity is the static node identity used during registration.
+// Identity is the static node identity (日志/展示用；接入鉴权使用 agent_id + agent_secret)。
 type Identity struct {
-	InstallToken     string `json:"install_token"`
-	EnrollmentToken string `json:"enrollment_token,omitempty"`
 	NodeKey      string `json:"node_key"`
 	Name         string `json:"name"`
 	Hostname     string `json:"hostname"`
@@ -53,11 +50,9 @@ type Collector interface {
 
 // SystemCollector is the default runtime collector.
 type SystemCollector struct {
-	nodeKey           string
-	nodeName          string
-	installToken      string
-	enrollmentToken   string
-	agentVersion      string
+	nodeKey      string
+	nodeName     string
+	agentVersion string
 
 	prevBytesRecv uint64
 	prevBytesSent uint64
@@ -65,13 +60,11 @@ type SystemCollector struct {
 }
 
 // New creates a system collector.
-func New(nodeKey, nodeName, installToken, enrollmentToken, agentVersion string) *SystemCollector {
+func New(nodeKey, nodeName, agentVersion string) *SystemCollector {
 	return &SystemCollector{
-		nodeKey:          nodeKey,
-		nodeName:         nodeName,
-		installToken:     installToken,
-		enrollmentToken:  enrollmentToken,
-		agentVersion:     agentVersion,
+		nodeKey:      nodeKey,
+		nodeName:     nodeName,
+		agentVersion: agentVersion,
 	}
 }
 
@@ -82,8 +75,7 @@ func (c *SystemCollector) CollectIdentity(context.Context) (*Identity, error) {
 		return nil, err
 	}
 
-	id := &Identity{
-		InstallToken: c.installToken,
+	return &Identity{
 		NodeKey:      c.nodeKey,
 		Name:         c.nodeName,
 		Hostname:     osutil.Hostname(),
@@ -93,12 +85,7 @@ func (c *SystemCollector) CollectIdentity(context.Context) (*Identity, error) {
 		PrivateIP:    osutil.PrivateIPv4(),
 		PublicIP:     "",
 		AgentVersion: c.agentVersion,
-	}
-	if strings.TrimSpace(c.enrollmentToken) != "" {
-		id.EnrollmentToken = strings.TrimSpace(c.enrollmentToken)
-		id.InstallToken = ""
-	}
-	return id, nil
+	}, nil
 }
 
 // CollectRuntimeState collects the latest runtime snapshot.

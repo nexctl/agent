@@ -1,16 +1,15 @@
 agent:
   server_url: "http://localhost:8080"
-  register_path: "/api/v1/agents/register"
-  # WebSocket 路径；与服务端 ws_url / 路由不一致时修改（握手失败请看日志里的 HTTP status 与 response_snippet）
   websocket_path: "/api/v1/agents/ws"
-  # 为 true 时始终用 server_url + websocket_path，忽略注册接口返回的 ws_url（服务端填错时常用）
   force_websocket_from_config: false
+  # 在控制台「添加节点」后填入以下三项（与数据库中一致）；无需再调用注册接口。
+  agent_id: ""
+  agent_secret: ""
+  node_key: ""
+  # node_id: 123   # 可选，与控制台节点 ID 一致时便于日志
+  node_name: "example-node"
   data_dir: "./data"
   config_dir: "./data/config"
-  # 二选一：控制台「添加节点」生成的 enrollment_token（推荐），或传统 install_token
-  install_token: ""
-  enrollment_token: ""
-  node_name: "example-node"
   credential_dir: "./data/credentials"
   log_dir: "./data/logs"
   runtime_interval_seconds: 30
@@ -18,8 +17,6 @@ agent:
   reconnect_interval_seconds: 5
   request_timeout_seconds: 10
   agent_version: "0.1.0"
-  # 自更新（参考 nezhahq agent）：Release 资源名需匹配 *_<goos>_<goarch>.zip，如 nexctl_linux_amd64.zip
   disable_auto_update: false
-  # 为 0 时随机 1440～2880 分钟检查一次（与 nezhahq 默认一致）
   self_update_period_minutes: 0
   github_repo: "nexctl/agent"

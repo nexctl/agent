@@ -15,13 +15,12 @@ import (
 	"github.com/nexctl/agent/internal/security"
 	"github.com/nexctl/agent/internal/store"
 	"github.com/nexctl/agent/internal/terminal"
-	"github.com/nexctl/agent/internal/transport/httpclient"
 	"github.com/nexctl/agent/internal/transport/wsclient"
 	"go.uber.org/zap"
 )
 
 // ErrRestartAfterUpdate 表示已成功替换二进制，进程应退出以便由外部拉起新版本（与 nezhahq agent 行为一致）。
-var ErrRestartAfterUpdate = errors.New("restart after self-update")
+var ErrRestartAfterUpdate = errors.New("restart after update")
 
 // 与 nezhahq agent 默认随机检查间隔（分钟）一致：minUpdateInterval ~ maxUpdateInterval
 const (
@@ -35,13 +34,12 @@ type RuntimeCollector interface {
 	CollectRuntimeState(ctx context.Context) (*collector.RuntimeState, error)
 }
 
-// Agent coordinates registration, websocket connection, periodic reporting, and optional self-update.
+// Agent coordinates websocket connection, periodic reporting, and optional self-update.
 type Agent struct {
 	cfg        config.AgentConfig
 	logger     *zap.Logger
 	store      store.CredentialStore
 	collector  RuntimeCollector
-	register   *httpclient.Client
 	ws         *wsclient.Client
 	credential *store.Credential
 }
@@ -63,9 +61,13 @@ func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 		return nil, err
 	}
 
-	nodeKey, err := layout.EnsureNodeKey()
-	if err != nil {
-		return nil, err
+	nodeKey := strings.TrimSpace(cfg.NodeKey)
+	if nodeKey == "" {
+		nk, err := layout.EnsureNodeKey()
+		if err != nil {
+			return nil, err
+		}
+		nodeKey = nk
 	}
 
 	ws := wsclient.New(cfg, logger)
@@ -76,8 +78,7 @@ func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 		cfg:       cfg,
 		logger:    logger,
 		store:     store.NewFileCredentialStore(cfg.CredentialDir),
-		collector: collector.New(nodeKey, cfg.NodeName, cfg.InstallToken, cfg.EnrollmentToken, cfg.AgentVersion),
-		register:  httpclient.New(cfg),
+		collector: collector.New(nodeKey, cfg.NodeName, cfg.AgentVersion),
 		ws:        ws,
 	}
 	ws.SetUpgradeCheckHandler(agent.runUpgradeFromControlPlane)
@@ -100,6 +101,29 @@ func (a *Agent) runUpgradeFromControlPlane() {
 	a.logger.Info("upgrade_command：无新版本或更新未应用")
 }
 
+func (a *Agent) resolveCredential() (*store.Credential, error) {
+	id := strings.TrimSpace(a.cfg.AgentID)
+	sec := strings.TrimSpace(a.cfg.AgentSecret)
+	if id != "" && sec != "" {
+		return &store.Credential{
+			NodeID:      a.cfg.NodeID,
+			AgentID:     id,
+			AgentSecret: sec,
+			WSURL:       "",
+		}, nil
+	}
+
+	cred, err := a.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	if cred != nil && strings.TrimSpace(cred.AgentID) != "" && strings.TrimSpace(cred.AgentSecret) != "" {
+		return cred, nil
+	}
+
+	return nil, fmt.Errorf("请在 agent.yaml 中配置 agent_id 与 agent_secret（由控制台「添加节点」生成），或保留有效的 credential.json")
+}
+
 // Run starts the agent lifecycle.
 func (a *Agent) Run(ctx context.Context) error {
 	if !a.cfg.DisableAutoUpdate {
@@ -113,25 +137,16 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 	}
 
-	credential, err := a.store.Load()
+	credential, err := a.resolveCredential()
 	if err != nil {
 		return err
 	}
-	if credential == nil {
-		identity, err := a.collector.CollectIdentity(ctx)
-		if err != nil {
-			return fmt.Errorf("collect identity: %w", err)
-		}
-		credential, err = a.register.Register(ctx, *identity)
-		if err != nil {
-			return fmt.Errorf("register agent: %w", err)
-		}
-		if err := a.store.Save(credential); err != nil {
-			return fmt.Errorf("save credential: %w", err)
-		}
-		a.logger.Info("agent registered", zap.Int64("node_id", credential.NodeID))
-	}
 	a.credential = credential
+	if credential.NodeID != 0 {
+		a.logger.Info("agent credentials loaded", zap.Int64("node_id", credential.NodeID))
+	} else {
+		a.logger.Info("agent credentials loaded")
+	}
 
 	wsDialURL := resolveWebSocketDialURL(a.logger, a.cfg, credential.WSURL)
 

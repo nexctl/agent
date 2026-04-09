@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Credential stores long-lived agent registration credentials.
+// Credential 存储接入控制面所需的 agent_id / agent_secret（可由控制台创建节点后写入配置，或历史 credential.json）。
 type Credential struct {
 	NodeID      int64  `json:"node_id"`
 	AgentID     string `json:"agent_id"`

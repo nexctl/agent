@@ -1,16 +1,15 @@
 # NexCtl Agent
 
-单一可执行文件（对齐 [nezhahq/agent](https://github.com/nezhahq/agent) 的 `cmd/agent` 形态）：负责注册、WebSocket、心跳与运行时状态上报。
+单一可执行文件（对齐 [nezhahq/agent](https://github.com/nezhahq/agent) 的 `cmd/agent` 形态）：负责 WebSocket、心跳与运行时状态上报。接入凭据由控制台「添加节点」生成，写入 `agent.yaml` 的 `agent_id` / `agent_secret` / `node_key`（可选 `node_id`）。
 
 ## Unified Server Contract
 
-- Register: `POST /api/v1/agents/register`
 - Agent websocket: `GET /api/v1/agents/ws`（通过请求头 `X-NexCtl-Agent-Id` / `X-NexCtl-Agent-Secret` 携带凭证）
-- Persisted credential fields:
-  - `node_id`
+- 配置项与历史 `credential.json`（若仍存在）中的字段：
+  - `node_id`（可选）
   - `agent_id`
   - `agent_secret`
-  - `ws_url`（若服务端误填为 `localhost` 等回环地址，而 `server_url` 为局域网 IP，agent 会自动改用 `server_url` + `websocket_path`；也可设 `force_websocket_from_config: true` 强制忽略注册返回的 `ws_url`）
+  - `ws_url`（可选；若服务端误填为 `localhost` 等回环地址，而 `server_url` 为局域网 IP，agent 会自动改用 `server_url` + `websocket_path`；也可设 `force_websocket_from_config: true`）
 
 ### WebSocket Envelope
 

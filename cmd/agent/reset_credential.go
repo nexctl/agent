@@ -13,7 +13,7 @@ import (
 func printResetCredentialUsage() {
 	fmt.Fprintf(os.Stderr, `用法: %s reset-credential [-config <配置文件>]
 
-删除 credential_dir 下的 credential.json，下次启动将重新执行注册流程。
+删除 credential_dir 下的 credential.json。若使用 agent.yaml 中的 agent_id/agent_secret/node_key，则不受影响。
 不通过 service 安装时，可用本命令手动清凭证；service install 默认已会删除凭证（除非加 -keep-credential）。
 
 `, os.Args[0])

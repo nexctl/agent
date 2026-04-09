@@ -12,13 +12,15 @@ import (
 // AgentConfig stores agent runtime settings.
 type AgentConfig struct {
 	ServerURL                string `yaml:"server_url"`
-	RegisterPath             string `yaml:"register_path"`
 	WebSocketPath            string `yaml:"websocket_path"`
-	// ForceWebSocketFromConfig 为 true 时忽略注册接口返回的 ws_url，始终用 server_url + websocket_path 连接。
-	ForceWebSocketFromConfig bool `yaml:"force_websocket_from_config"`
+	ForceWebSocketFromConfig bool   `yaml:"force_websocket_from_config"`
 	NodeName                 string `yaml:"node_name"`
-	InstallToken             string `yaml:"install_token"`
-	EnrollmentToken          string `yaml:"enrollment_token"`
+	// AgentID / AgentSecret 由控制台创建节点时生成，与 node_key 一并写入配置；与 WebSocket 握手头一致。
+	AgentID     string `yaml:"agent_id"`
+	AgentSecret string `yaml:"agent_secret"`
+	NodeKey     string `yaml:"node_key"`
+	// NodeID 可选，仅用于日志；与控制台节点 ID 一致时建议填写。
+	NodeID int64 `yaml:"node_id"`
 	DataDir                  string `yaml:"data_dir"`
 	ConfigDir                string `yaml:"config_dir"`
 	CredentialDir            string `yaml:"credential_dir"`
@@ -31,8 +33,7 @@ type AgentConfig struct {
 	DisableAutoUpdate        bool   `yaml:"disable_auto_update"`
 	SelfUpdatePeriodMinutes  int    `yaml:"self_update_period_minutes"`
 	GithubRepo               string `yaml:"github_repo"`
-	// TerminalShell 为空时使用平台默认（如 /bin/sh、cmd.exe）；仅影响远程 Web 终端。
-	TerminalShell string `yaml:"terminal_shell"`
+	TerminalShell            string `yaml:"terminal_shell"`
 }
 
 type agentFile struct {
@@ -46,7 +47,6 @@ func LoadAgent(path string) (AgentConfig, error) {
 		return AgentConfig{}, err
 	}
 	applyAgentEnv(&payload.Agent)
-	payload.Agent.RegisterPath = normalizePath(payload.Agent.RegisterPath, "/api/v1/agents/register")
 	payload.Agent.WebSocketPath = normalizePath(payload.Agent.WebSocketPath, "/api/v1/agents/ws")
 	if strings.TrimSpace(payload.Agent.GithubRepo) == "" {
 		payload.Agent.GithubRepo = "nexctl/agent"
@@ -67,11 +67,12 @@ func load(path string, target any) error {
 
 func applyAgentEnv(cfg *AgentConfig) {
 	overrideString(&cfg.ServerURL, "OPSPILOT_AGENT_SERVER_URL")
-	overrideString(&cfg.RegisterPath, "OPSPILOT_AGENT_REGISTER_PATH")
 	overrideString(&cfg.WebSocketPath, "OPSPILOT_AGENT_WEBSOCKET_PATH")
 	overrideString(&cfg.NodeName, "OPSPILOT_AGENT_NODE_NAME")
-	overrideString(&cfg.InstallToken, "OPSPILOT_AGENT_INSTALL_TOKEN")
-	overrideString(&cfg.EnrollmentToken, "OPSPILOT_AGENT_ENROLLMENT_TOKEN")
+	overrideString(&cfg.AgentID, "OPSPILOT_AGENT_AGENT_ID")
+	overrideString(&cfg.AgentSecret, "OPSPILOT_AGENT_AGENT_SECRET")
+	overrideString(&cfg.NodeKey, "OPSPILOT_AGENT_NODE_KEY")
+	overrideInt64(&cfg.NodeID, "OPSPILOT_AGENT_NODE_ID")
 	overrideString(&cfg.DataDir, "OPSPILOT_AGENT_DATA_DIR")
 	overrideString(&cfg.ConfigDir, "OPSPILOT_AGENT_CONFIG_DIR")
 	overrideString(&cfg.CredentialDir, "OPSPILOT_AGENT_CREDENTIAL_DIR")
@@ -101,6 +102,14 @@ func overrideString(target *string, envKey string) {
 func overrideInt(target *int, envKey string) {
 	if value := os.Getenv(envKey); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
+			*target = parsed
+		}
+	}
+}
+
+func overrideInt64(target *int64, envKey string) {
+	if value := os.Getenv(envKey); value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
 			*target = parsed
 		}
 	}

@@ -24,8 +24,8 @@ const (
 	MessageTypeAck = "ack"
 	// MessageTypeError is the generic error message type.
 	MessageTypeError = "error"
-	// MessageTypeTaskDispatch is reserved for future task delivery.
 	MessageTypeTaskDispatch = "task_dispatch"
+	MessageTypeTaskReport   = "task_report"
 	// MessageTypeFileDispatch is reserved for future file operations.
 	MessageTypeFileDispatch = "file_dispatch"
 	// MessageTypeUpgradeCommand is reserved for future upgrade commands.
@@ -67,13 +67,24 @@ type TerminalHandler interface {
 // UpgradeCheckHandler 控制面下发 upgrade_command 时触发一次 GitHub 自更新检查。
 type UpgradeCheckHandler func()
 
+// TaskDispatchPayload 控制面下发的任务。
+type TaskDispatchPayload struct {
+	TaskID   int64  `json:"task_id"`
+	TaskType string `json:"task_type"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+// TaskDispatchHandler 处理 task_dispatch。
+type TaskDispatchHandler func(TaskDispatchPayload)
+
 // Client manages the websocket connection and reconnection loop.
 type Client struct {
-	cfg           config.AgentConfig
-	logger        *zap.Logger
-	sendCh        chan Message
-	terminal      TerminalHandler
-	upgradeCheck  UpgradeCheckHandler
+	cfg          config.AgentConfig
+	logger       *zap.Logger
+	sendCh       chan Message
+	terminal     TerminalHandler
+	upgradeCheck UpgradeCheckHandler
+	taskDispatch TaskDispatchHandler
 }
 
 // New creates a websocket client.
@@ -93,6 +104,11 @@ func (c *Client) SetTerminalHandler(h TerminalHandler) {
 // SetUpgradeCheckHandler 注册升级检查回调（须在 Run 前调用）。
 func (c *Client) SetUpgradeCheckHandler(h UpgradeCheckHandler) {
 	c.upgradeCheck = h
+}
+
+// SetTaskDispatchHandler 注册任务下发回调（须在 Run 前调用）。
+func (c *Client) SetTaskDispatchHandler(h TaskDispatchHandler) {
+	c.taskDispatch = h
 }
 
 // Send enqueues a message for websocket delivery.
