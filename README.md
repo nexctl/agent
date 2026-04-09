@@ -42,8 +42,9 @@ nexctl-agent service <install|uninstall|start|stop|restart|status> [-config <配
 ```
 
 - **install / uninstall** 通常需要 **管理员（Windows）或 root（Linux/macOS）**。
-- 使用**非默认**配置文件路径时，会注册为独立服务名 `nexctl-agent-<配置路径 MD5 前缀>`，避免多实例冲突。
-- 安装后 Linux 常见操作为：`sudo systemctl daemon-reload && sudo systemctl enable --now nexctl-agent`（具体单元名以 `install` 输出为准）。
+- 系统服务名固定为 **`nexctl`**（与配置文件路径无关；多实例需自行区分或使用不同机器）。
+- 由 systemd / Windows SCM 拉起时会走 `kardianos/service` 的 `Run` 路径，向管理器报告已启动；**勿**在未接入 SCM 的情况下仅执行 `nexctl-agent -config` 当作服务进程，否则 Windows 易出现「未在时限内响应启动请求」(1053)。
+- 安装后 Linux 常见操作为：`sudo systemctl daemon-reload && sudo systemctl enable --now nexctl`。
 
 查看子命令说明：`nexctl-agent service help`。
 

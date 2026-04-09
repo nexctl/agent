@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/kardianos/service"
 	"github.com/nexctl/agent/internal/app"
 	"github.com/nexctl/agent/internal/config"
 )
@@ -20,6 +21,12 @@ func main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "reset-credential" {
 		os.Exit(runResetCredentialCLI(os.Args[2:]))
+	}
+
+	// Windows：由服务管理器启动时必须走 kardianos service.Run（svc.Run），向 SCM 报告 Running；
+	// Linux：由 systemd 启动时 Interactive() 为 false，同样须走 service.Run。
+	if !service.Interactive() {
+		os.Exit(runAsService())
 	}
 
 	configPath := flag.String("config", "configs/agent.example.yaml", "agent config path")

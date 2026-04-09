@@ -1,25 +1,112 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/kardianos/service"
+	"github.com/nexctl/agent/internal/app"
 	"github.com/nexctl/agent/internal/config"
 	"github.com/nexctl/agent/internal/store"
 )
 
-// noopProgram 仅用于 install/uninstall 等控制命令注册服务；实际运行由 systemd/launchd 等直接执行
-// `nexctl-agent -config <path>`，不会调用 Start/Stop。
+// noopProgram 仅用于 install/uninstall 等控制命令注册服务；进程由 SCM/systemd 拉起时改用 agentProgram。
 type noopProgram struct{}
 
 func (p *noopProgram) Start(s service.Service) error { return nil }
-func (p *noopProgram) Stop(s service.Service) error  { return nil }
+func (p *noopProgram) Stop(s service.Service) error { return nil }
+
+// agentProgram 在系统服务模式下运行 Agent（Windows 须通过 kardianos svc.Run 向 SCM 报告 Running，否则超时 1053）。
+type agentProgram struct {
+	absConfig string
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+}
+
+func newAgentProgram(absConfig string) *agentProgram {
+	return &agentProgram{absConfig: absConfig}
+}
+
+func (p *agentProgram) Start(s service.Service) error {
+	logger, _ := s.Logger(nil)
+	p.wg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
+	go func() {
+		defer p.wg.Done()
+		cfg, err := config.LoadAgent(p.absConfig)
+		if err != nil {
+			if logger != nil {
+				_ = logger.Errorf("load config: %v", err)
+			}
+			return
+		}
+		agent, err := app.NewAgent(cfg)
+		if err != nil {
+			if logger != nil {
+				_ = logger.Errorf("create agent: %v", err)
+			}
+			return
+		}
+		if err := agent.Run(ctx); err != nil {
+			if errors.Is(err, app.ErrRestartAfterUpdate) {
+				os.Exit(1)
+			}
+			if ctx.Err() == nil && logger != nil {
+				_ = logger.Errorf("run agent: %v", err)
+			}
+		}
+	}()
+	return nil
+}
+
+func (p *agentProgram) Stop(s service.Service) error {
+	if p.cancel != nil {
+		p.cancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(25 * time.Second):
+	}
+	return nil
+}
+
+// runAsService 由 systemd / Windows SCM 拉起时调用，必须走 service.Run，不得直接跑 main 里的 agent.Run。
+func runAsService() int {
+	fs := flag.NewFlagSet("nexctl-agent", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", "configs/agent.example.yaml", "agent config path")
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		return 1
+	}
+	absConfig, err := filepath.Abs(*configPath)
+	if err != nil {
+		return 1
+	}
+	prg := newAgentProgram(absConfig)
+	cfg := buildServiceConfig(absConfig)
+	svc, err := service.New(prg, cfg)
+	if err != nil {
+		return 1
+	}
+	if err := svc.Run(); err != nil {
+		return 1
+	}
+	return 0
+}
 
 func printServiceUsage() {
 	fmt.Fprintf(os.Stderr, `用法: %s service <子命令> [-config <配置文件>]
@@ -38,19 +125,12 @@ func printServiceUsage() {
   %s service status -config /etc/nexctl/agent.yaml
 
 说明:
-  - 不同配置文件会注册为不同服务名（与 nezhahq agent 类似，避免多实例冲突）。
+  - 系统服务固定名为 nexctl（Linux: systemd 单元；Windows: 服务名）。
   - install 默认会先删除 credential.json（覆盖重装）；若需保留已有凭证，请加 -keep-credential。
 `, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
-func serviceNameForConfig(absConfig string) string {
-	defaultAbs, err := filepath.Abs("configs/agent.example.yaml")
-	if err == nil && filepath.Clean(absConfig) == filepath.Clean(defaultAbs) {
-		return "nexctl-agent"
-	}
-	sum := md5.Sum([]byte(filepath.Clean(absConfig)))
-	return "nexctl-agent-" + hex.EncodeToString(sum[:])[:7]
-}
+const fixedServiceName = "nexctl"
 
 func buildServiceConfig(absConfig string) *service.Config {
 	exe, err := os.Executable()
@@ -58,7 +138,6 @@ func buildServiceConfig(absConfig string) *service.Config {
 		exe = os.Args[0]
 	}
 	exeDir := filepath.Dir(exe)
-	name := serviceNameForConfig(absConfig)
 
 	// Linux systemd: Restart=；Windows: OnFailure（见 kardianos/service 文档）
 	kv := service.KeyValue{
@@ -68,8 +147,8 @@ func buildServiceConfig(absConfig string) *service.Config {
 	}
 
 	return &service.Config{
-		Name:             name,
-		DisplayName:      "NexCtl Agent",
+		Name:             fixedServiceName,
+		DisplayName:      "NexCtl",
 		Description:      "NexCtl monitoring agent",
 		Arguments:        []string{"-config", absConfig},
 		WorkingDirectory: exeDir,
