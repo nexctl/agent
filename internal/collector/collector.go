@@ -27,6 +27,12 @@ type RuntimeState struct {
 	UptimeSeconds uint64    `json:"uptime_seconds"`
 	ProcessCount  uint32    `json:"process_count"`
 	Timestamp     time.Time `json:"timestamp"`
+	// 与 Identity 对齐，供控制面写入 nodes 表展示 OS/架构/版本
+	Hostname        string `json:"hostname,omitempty"`
+	Platform        string `json:"platform,omitempty"`
+	PlatformVersion string `json:"platform_version,omitempty"`
+	Arch            string `json:"arch,omitempty"`
+	AgentVersion    string `json:"agent_version,omitempty"`
 }
 
 // Identity is the static node identity (日志/展示用；接入鉴权使用 agent_id + agent_secret)。
@@ -89,7 +95,7 @@ func (c *SystemCollector) CollectIdentity(context.Context) (*Identity, error) {
 }
 
 // CollectRuntimeState collects the latest runtime snapshot.
-func (c *SystemCollector) CollectRuntimeState(context.Context) (*RuntimeState, error) {
+func (c *SystemCollector) CollectRuntimeState(ctx context.Context) (*RuntimeState, error) {
 	now := time.Now().UTC()
 	result := &RuntimeState{Timestamp: now}
 
@@ -115,6 +121,13 @@ func (c *SystemCollector) CollectRuntimeState(context.Context) (*RuntimeState, e
 	}
 	if counters, err := gopsnet.IOCounters(false); err == nil && len(counters) > 0 {
 		result.NetworkRxBps, result.NetworkTxBps = c.networkRate(now, counters[0].BytesRecv, counters[0].BytesSent)
+	}
+	if id, err := c.CollectIdentity(ctx); err == nil {
+		result.Hostname = id.Hostname
+		result.Platform = id.OS
+		result.PlatformVersion = id.OSVersion
+		result.Arch = id.Arch
+		result.AgentVersion = id.AgentVersion
 	}
 	return result, nil
 }

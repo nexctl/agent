@@ -46,6 +46,9 @@ type Agent struct {
 
 // NewAgent creates the agent runtime.
 func NewAgent(cfg config.AgentConfig) (*Agent, error) {
+	if strings.TrimSpace(cfg.AgentVersion) == "" {
+		cfg.AgentVersion = Version
+	}
 	layout := store.Layout{
 		DataDir:       cfg.DataDir,
 		ConfigDir:     cfg.ConfigDir,
