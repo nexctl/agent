@@ -20,3 +20,5 @@ agent:
   disable_auto_update: false
   self_update_period_minutes: 0
   github_repo: "nexctl/agent"
+  # 控制台「远程文件」可访问的根路径列表；留空则默认 Windows 为 C:\，Linux/macOS 为 /。多盘符可写多个，例如 [ "C:\\", "D:\\" ]
+  file_manager_roots: []

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nexctl/agent/internal/collector"
+	"github.com/nexctl/agent/internal/filemgr"
 	"github.com/nexctl/agent/internal/config"
 	"github.com/nexctl/agent/internal/security"
 	"github.com/nexctl/agent/internal/store"
@@ -76,6 +77,20 @@ func NewAgent(cfg config.AgentConfig) (*Agent, error) {
 	ws := wsclient.New(cfg, logger)
 	termMgr := terminal.NewManager(ws, logger, strings.TrimSpace(cfg.TerminalShell))
 	ws.SetTerminalHandler(termMgr)
+
+	fmExec := filemgr.NewExecutor(cfg.FileManagerRoots)
+	ws.SetFileDispatchHandler(func(msg wsclient.Message) {
+		var p filemgr.DispatchPayload
+		if err := json.Unmarshal(msg.Payload, &p); err != nil {
+			r := filemgr.ReportPayload{OK: false, Error: "invalid file_dispatch payload"}
+			b, _ := json.Marshal(r)
+			_ = ws.Send(wsclient.Message{Type: wsclient.MessageTypeFileReport, RequestID: msg.RequestID, Timestamp: time.Now().UTC(), Payload: b})
+			return
+		}
+		r := fmExec.Execute(p)
+		b, _ := json.Marshal(r)
+		_ = ws.Send(wsclient.Message{Type: wsclient.MessageTypeFileReport, RequestID: msg.RequestID, Timestamp: time.Now().UTC(), Payload: b})
+	})
 
 	agent := &Agent{
 		cfg:       cfg,

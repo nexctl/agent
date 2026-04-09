@@ -34,6 +34,8 @@ type AgentConfig struct {
 	SelfUpdatePeriodMinutes  int    `yaml:"self_update_period_minutes"`
 	GithubRepo               string `yaml:"github_repo"`
 	TerminalShell            string `yaml:"terminal_shell"`
+	// FileManagerRoots 允许远程浏览/读写的根路径列表；为空时使用默认（Unix: /，Windows: C:\）。
+	FileManagerRoots []string `yaml:"file_manager_roots"`
 }
 
 type agentFile struct {
@@ -91,6 +93,18 @@ func applyAgentEnv(cfg *AgentConfig) {
 	overrideInt(&cfg.SelfUpdatePeriodMinutes, "OPSPILOT_AGENT_SELF_UPDATE_PERIOD_MINUTES")
 	overrideString(&cfg.GithubRepo, "OPSPILOT_AGENT_GITHUB_REPO")
 	overrideString(&cfg.TerminalShell, "OPSPILOT_AGENT_TERMINAL_SHELL")
+	if v := os.Getenv("OPSPILOT_AGENT_FILE_MANAGER_ROOTS"); v != "" {
+		var roots []string
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				roots = append(roots, p)
+			}
+		}
+		if len(roots) > 0 {
+			cfg.FileManagerRoots = roots
+		}
+	}
 }
 
 func overrideString(target *string, envKey string) {

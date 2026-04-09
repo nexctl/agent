@@ -26,8 +26,8 @@ const (
 	MessageTypeError = "error"
 	MessageTypeTaskDispatch = "task_dispatch"
 	MessageTypeTaskReport   = "task_report"
-	// MessageTypeFileDispatch is reserved for future file operations.
 	MessageTypeFileDispatch = "file_dispatch"
+	MessageTypeFileReport   = "file_report"
 	// MessageTypeUpgradeCommand is reserved for future upgrade commands.
 	MessageTypeUpgradeCommand = "upgrade_command"
 
@@ -83,8 +83,9 @@ type Client struct {
 	logger       *zap.Logger
 	sendCh       chan Message
 	terminal     TerminalHandler
-	upgradeCheck UpgradeCheckHandler
-	taskDispatch TaskDispatchHandler
+	upgradeCheck   UpgradeCheckHandler
+	taskDispatch   TaskDispatchHandler
+	fileDispatchFn func(Message)
 }
 
 // New creates a websocket client.
@@ -109,6 +110,11 @@ func (c *Client) SetUpgradeCheckHandler(h UpgradeCheckHandler) {
 // SetTaskDispatchHandler 注册任务下发回调（须在 Run 前调用）。
 func (c *Client) SetTaskDispatchHandler(h TaskDispatchHandler) {
 	c.taskDispatch = h
+}
+
+// SetFileDispatchHandler 处理控制面 file_dispatch（节点文件管理）。
+func (c *Client) SetFileDispatchHandler(h func(Message)) {
+	c.fileDispatchFn = h
 }
 
 // Send enqueues a message for websocket delivery.
@@ -300,6 +306,10 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, errCh chan<
 			case MessageTypeUpgradeCommand:
 				if c.upgradeCheck != nil {
 					go c.upgradeCheck()
+				}
+			case MessageTypeFileDispatch:
+				if c.fileDispatchFn != nil {
+					go c.fileDispatchFn(msg)
 				}
 			default:
 				c.logger.Debug("websocket message", zap.String("type", msg.Type), zap.String("request_id", msg.RequestID))
